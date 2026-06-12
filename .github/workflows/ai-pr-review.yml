@@ -1,0 +1,58 @@
+name: Avaliação IA e Testes da PR
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'src/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  avaliar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código da PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar Testes (Jest)
+        # Executa a suíte estrita fornecida no repositório base
+        run: npx jest
+
+      - name: Coletar o diff da PR
+        if: always() # Garante que o diff seja coletado mesmo se o Jest falhar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} > pr.diff
+
+      - name: Avaliar qualidade do código com IA
+        if: always() # Garante que a IA avalie o código escrito independentemente dos testes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/evaluate.mjs
+
+      - name: Publicar avaliação na PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body-file review.md

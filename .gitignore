@@ -1,0 +1,17 @@
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+
+# SQLite database files
+/data
+*.db
+*.sqlite
+
+# Local environment files (keep .env.example tracked)
+.env
+.env.local
+
+# Logs
+*.log
