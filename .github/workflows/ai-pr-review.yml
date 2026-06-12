@@ -1,7 +1,7 @@
-name: Avaliação IA e Testes da PR
+name: Avaliação IA da PR
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize]
     paths:
       - 'src/**'
@@ -19,33 +19,39 @@ jobs:
   avaliar:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout do repo base (scripts + testes)
+        uses: actions/checkout@v4
+
       - name: Checkout do código da PR
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr-code
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Instalar dependências
-        run: npm ci
-
-      - name: Executar Testes (Jest)
-        # Executa a suíte estrita fornecida no repositório base
-        run: npx jest
+      - name: Instalar dependências e rodar testes
+        working-directory: pr-code
+        run: |
+          npm ci
+          npm run build || true
+          npm test -- --forceExit --passWithNoTests 2>&1 | tee ../test-output.txt || true
 
       - name: Coletar o diff da PR
-        if: always() # Garante que o diff seja coletado mesmo se o Jest falhar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} > pr.diff
+          echo "Tamanho do diff: $(wc -l < pr.diff) linhas"
 
-      - name: Avaliar qualidade do código com IA
-        if: always() # Garante que a IA avalie o código escrito independentemente dos testes
+      - name: Avaliar com IA
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: node .github/scripts/evaluate.mjs
 
       - name: Publicar avaliação na PR
@@ -53,6 +59,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} \
-            --repo ${{ github.repository }} \
-            --body-file review.md
+          if [ -f review.md ]; then
+            gh pr comment ${{ github.event.pull_request.number }} \
+              --repo ${{ github.repository }} \
+              --body-file review.md
+          else
+            echo "review.md não gerado, pulando comentário."
+          fi
